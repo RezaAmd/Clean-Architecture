@@ -1,0 +1,1 @@
+nuget.exe pack "Clean-Architecture/.template.config/RezaAmd.CleanArch.5.0.2.nuspec" -OutputDirectory "Clean-Architecture"
