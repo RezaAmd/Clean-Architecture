@@ -1,21 +1,26 @@
-﻿using Microsoft.AspNetCore.Identity;
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace Domain.Entities.Identity
 {
-    public class Role : IdentityRole
+    public class Role
     {
         #region Constructors
         Role() { }
-        public Role(string name) : base(name)
+        public Role(string name)
         {
             Id = Guid.NewGuid().ToString();
-            NormalizedName = name.ToUpper();
+            Name = name.Trim();
+            NormalizedName = name.Trim().ToUpper();
         }
         #endregion
 
+        public string Id { get; set; }
+        public string Name { get; set; }
+        public string NormalizedName { get; set; }
+
+        #region Relations
         public virtual ICollection<UserRole> UserRoles { get; set; }
-        public virtual ICollection<RoleClaim> RoleClaims { get; set; }
+        #endregion
     }
 }

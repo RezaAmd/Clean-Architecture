@@ -19,7 +19,7 @@ using System.Threading.Tasks;
 
 namespace Application.Services.Identity
 {
-    public class UserService : UserManager<User>, IUserService
+    public class UserService : IUserService
     {
         #region Constructor
         private readonly IUserStore<User> store;
@@ -33,6 +33,7 @@ namespace Application.Services.Identity
         private readonly ILogger<UserManager<User>> logger;
         private readonly IDbContext context;
         private readonly IJwtService jwtService;
+        private readonly string passwordHashSalt = "3T9$Ss^a3g27P";
 
         public UserService(IUserStore<User> _store,
             IOptions<IdentityOptions> _options,
@@ -45,8 +46,6 @@ namespace Application.Services.Identity
             ILogger<UserManager<User>> _logger,
             IDbContext _context,
             IJwtService _jwtService)
-            : base(_store, _options, _passwordHasher, _userValidators, _passwordValidators,
-                _normalizer, _errors, _serviceProvider, _logger)
         {
             store = _store;
             options = _options;
@@ -61,6 +60,128 @@ namespace Application.Services.Identity
             jwtService = _jwtService;
         }
         #endregion
+
+        public async Task<User> FindByIdAsync(string id, CancellationToken cancellationToken = new CancellationToken())
+        {
+            return await context.Users.FindAsync(id, cancellationToken);
+        }
+
+        public async Task<Result> CreateAsync(User user, CancellationToken cancellationToken = new CancellationToken())
+        {
+            await context.Users.AddAsync(user, cancellationToken);
+            if (Convert.ToBoolean(await context.SaveChangesAsync(cancellationToken)))
+                return Result.Success;
+            return Result.Failed();
+        }
+
+        public async Task<Result> CreateAsync(User user, string password, CancellationToken cancellationToken = default)
+        {
+            user.PasswordHash = password.Encrypt(passwordHashSalt);
+            await context.Users.AddAsync(user, cancellationToken);
+            if (Convert.ToBoolean(await context.SaveChangesAsync(cancellationToken)))
+                return Result.Success;
+            return Result.Failed();
+        }
+
+        public async Task<Result> UpdateAsync(User user, CancellationToken cancellationToken = new CancellationToken())
+        {
+            context.Users.Update(user);
+            if (Convert.ToBoolean(await context.SaveChangesAsync(cancellationToken)))
+                return Result.Success;
+            return Result.Failed();
+        }
+
+        public async Task<Result> DeleteAsync(User user, CancellationToken cancellationToken = default)
+        {
+            context.Users.Remove(user);
+            if (Convert.ToBoolean(await context.SaveChangesAsync(cancellationToken)))
+                return Result.Success;
+            return Result.Failed();
+        }
+
+        public async Task<User> FindByNameAsync(string userName, CancellationToken cancellationToken = new CancellationToken()) =>
+            await context.Users.Where(u => u.Username == userName).FirstOrDefaultAsync(cancellationToken);
+
+        public async Task<User> FindByEmailAsync(string email, CancellationToken cancellationToken = new CancellationToken()) =>
+            await context.Users.Where(u => u.Email == email).FirstOrDefaultAsync(cancellationToken);
+
+        public async Task<Result> AddToRoleAsync(User user, Role role, CancellationToken cancellationToken = default)
+        {
+            var userRole = new UserRole(user.Id, role.Id);
+            user.UserRoles.Add(userRole);
+            if (Convert.ToBoolean(await context.SaveChangesAsync(cancellationToken)))
+                return Result.Success;
+            return Result.Failed();
+        }
+
+        public async Task<Result> AddToRolesAsync(User user, IEnumerable<string> roles)
+        {
+            throw new NotImplementedException();
+        }
+
+        public async Task<Result> RemoveFromRoleAsync(User user, Role role, CancellationToken cancellationToken = new CancellationToken())
+        {
+            throw new NotImplementedException();
+        }
+
+        public Task<Result> RemoveFromRolesAsync(User user, IEnumerable<string> roles)
+        {
+            throw new NotImplementedException();
+        }
+
+        public async Task<Result> AddPasswordAsync(User user, string password, CancellationToken cancellationToken = new CancellationToken())
+        {
+            if (string.IsNullOrEmpty(user.PasswordHash))
+            {
+                user.PasswordHash = password.Encrypt(passwordHashSalt);
+                return await UpdateAsync(user);
+            }
+            return Result.Failed(new List<Error>{
+                new (742, "User already had a password.")
+            });
+        }
+
+        public async Task<Result> RemovePasswordAsync(User user, CancellationToken cancellationToken = new CancellationToken())
+        {
+            if (!string.IsNullOrEmpty(user.PasswordHash))
+            {
+                user.PasswordHash = null;
+                return await UpdateAsync(user);
+            }
+            return Result.Failed(new List<Error>
+            {
+                new(471, "The user has no password.")
+            });
+        }
+
+        public Task<Result> ResetPasswordAsync(User user, string newPassword, CancellationToken cancellationToken = new CancellationToken())
+        {
+            user.PasswordHash = newPassword.Encrypt(passwordHashSalt);
+            return UpdateAsync(user, cancellationToken);
+        }
+
+        public Task<PasswordVerificationResult> VerifyPasswordAsync(IUserPasswordStore<User> store, User user, string password)
+        {
+            throw new NotImplementedException();
+        }
+
+        public bool CheckPasswordAsync(User user, string password)
+        {
+            if (user.PasswordHash == password.Encrypt(passwordHashSalt))
+                return true;
+            return false;
+        }
+
+        public bool IsLockedOutAsync(User user)
+        {
+            return user.LockoutEnd.HasValue;
+        }
+
+        public Task<Result> SetLockoutEnabledAsync(User user, bool enabled, CancellationToken cancellationToken = new CancellationToken())
+        {
+            user.LockedOutEnabled = enabled;
+            return UpdateAsync(user);
+        }
 
         /// <summary>
         /// 
@@ -78,7 +199,7 @@ namespace Application.Services.Identity
                 init = init.AsNoTracking();
             // search
             if (!string.IsNullOrEmpty(keyword))
-                init = init.Where(u => keyword.Contains(u.NormalizedUserName) || keyword.Contains(u.Name)
+                init = init.Where(u => keyword.Contains(u.NormalizedUsername) || keyword.Contains(u.Name)
                  || keyword.Contains(u.Surname));
 
             // include roles
@@ -97,9 +218,9 @@ namespace Application.Services.Identity
         /// <param name="identity">identity for find</param>
         /// <returns>user</returns>
         public async Task<User> FindByIdentityAsync(string identity, bool asNoTracking = false, bool withRoles = false,
-            bool withClaims = false, bool withTokens = false, TypeAdapterConfig config = null)
+            TypeAdapterConfig config = null)
         {
-            var init = context.Users.Where(u => u.NormalizedUserName == identity.ToUpper()
+            var init = context.Users.Where(u => u.NormalizedUsername == identity.ToUpper()
             || u.PhoneNumber == identity
             || u.NormalizedEmail == identity.ToUpper()
             || u.Id == identity);
@@ -109,10 +230,6 @@ namespace Application.Services.Identity
             if (withRoles)
                 init = init.Include(u => u.UserRoles)
                     .ThenInclude(ur => ur.Role);
-            if (withClaims)
-                init = init.Include(u => u.Claims);
-            if (withTokens)
-                init = init.Include(u => u.Tokens);
             #endregion
             return await init.FirstOrDefaultAsync();
         }
@@ -121,7 +238,7 @@ namespace Application.Services.Identity
         {
             var claims = new List<Claim>();
             claims.Add(new Claim(ClaimTypes.NameIdentifier, user.Id));
-            claims.Add(new Claim(ClaimTypes.Name, user.UserName));
+            claims.Add(new Claim(ClaimTypes.Name, user.Username));
             if (user.UserRoles != null)
                 foreach (var role in user.UserRoles)
                 {
@@ -129,11 +246,6 @@ namespace Application.Services.Identity
                 }
             var jwtResult = jwtService.GenerateToken(claims, expire);
             return jwtResult;
-        }
-
-        Task<PasswordVerificationResult> IUserService.VerifyPasswordAsync(IUserPasswordStore<User> store, User user, string password)
-        {
-            return VerifyPasswordAsync(store, user, password);
         }
 
         #region Otp and verify
@@ -157,6 +269,7 @@ namespace Application.Services.Identity
             }
             return (Result.Failed(), null);
         }
+
 
         #endregion
     }

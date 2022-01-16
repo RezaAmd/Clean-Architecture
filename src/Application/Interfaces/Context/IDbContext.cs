@@ -13,5 +13,6 @@ namespace Application.Interfaces.Context
         #endregion
 
         Task<int> SaveChangesAsync(CancellationToken cancellationToken);
+        DbSet<TEntity> Set<TEntity>() where TEntity : class;
     }
 }
