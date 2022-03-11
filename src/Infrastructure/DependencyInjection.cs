@@ -81,8 +81,6 @@ namespace Infrastructure
             })
                 .AddJwtBearer(options =>
                 {
-                    var key = Encoding.UTF8.GetBytes(JwtConfig.secretKey);
-                    var encryptionkey = Encoding.UTF8.GetBytes(JwtConfig.encryptionKey);
                     options.RequireHttpsMetadata = false;
                     options.SaveToken = true;
                     options.TokenValidationParameters = new TokenValidationParameters
@@ -90,21 +88,20 @@ namespace Infrastructure
                         ClockSkew = TimeSpan.Zero,
                         RequireSignedTokens = true,
                         ValidateIssuerSigningKey = true,
-                        IssuerSigningKey = new SymmetricSecurityKey(key),
+                        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(JwtConfig.secretKey)),
                         RequireExpirationTime = true,
                         ValidateLifetime = true,
                         ValidateIssuer = false,
                         ValidateAudience = false,
-                        TokenDecryptionKey = new SymmetricSecurityKey(encryptionkey)
+                        TokenDecryptionKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(JwtConfig.encryptionKey))
                     };
                 });
-
             return services;
         }
 
         public static IServiceCollection AddCacheServices(this IServiceCollection services)
         {
-            services.AddTransient<IRedisService, RedisService>();
+            services.AddScoped<IRedisService, RedisService>();
 
             services.AddDistributedMemoryCache();
             // Redis Cash Service
