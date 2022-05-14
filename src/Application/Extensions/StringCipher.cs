@@ -7,7 +7,7 @@ namespace Application.Extentions
 {
     public static class StringCipher
     {
-        private static string EncryptionKey = "tEsl@369";
+        private static string EncryptionKey = "YOUR_ENCRYPT_KEY";
         public static string Encrypt(this string clearText, string salt = default)
         {
             byte[] clearBytes = Encoding.Unicode.GetBytes(clearText);
